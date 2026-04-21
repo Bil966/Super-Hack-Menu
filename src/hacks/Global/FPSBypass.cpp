@@ -1,0 +1,75 @@
+#include <modules/config/config.hpp>
+#include <modules/gui/gui.hpp>
+#include <modules/gui/components/float-toggle.hpp>
+#include <modules/hack/hack.hpp>
+
+#include <Geode/modify/GameManager.hpp>
+
+#ifdef GEODE_IS_WINDOWS
+constexpr float MIN_FPS = 1.f;
+constexpr float MAX_FPS = 100000.f;
+
+namespace superhack::Global {
+    class $hack(FPSBypass) {
+    public:
+        static void updateRefreshRate() {
+            auto* gm = utils::get<GameManager>();
+
+            bool fpsBypassEnabled = config::get<bool>("global.fpsbypass.toggle", false);
+            auto fpsBypassValue = config::get<float>("global.fpsbypass", gm->m_customFPSTarget);
+            float actualFPS = std::clamp(fpsBypassValue, MIN_FPS, MAX_FPS);
+            gm->setGameVariable(GameVar::UnlockFPS, fpsBypassEnabled);
+            gm->m_customFPSTarget = actualFPS;
+
+            float frameTime = 1.f / (fpsBypassEnabled ? actualFPS : 60.f);
+            utils::get<cocos2d::CCDirector>()->setAnimationInterval(frameTime);
+        }
+
+        void init() override {
+            auto tab = gui::MenuTab::find("tab.global");
+            tab->addFloatToggle("global.fpsbypass", "global.fpsbypass", MIN_FPS, MAX_FPS, "%.2f FPS")
+               ->handleKeybinds()
+               ->toggleCallback([] {
+                   if (config::get<bool>("global.fpsbypass.toggle", false)) {
+                       config::setTemp("global.vsync", false);
+                       utils::get<GameManager>()->setGameVariable(GameVar::VerticalSync, false);
+                       utils::get<AppDelegate>()->toggleVerticalSync(false);
+                   }
+                   updateRefreshRate();
+               })
+               ->valueCallback([](float) { updateRefreshRate(); });
+        }
+
+        void lateInit() override {
+            auto* gm = utils::get<GameManager>();
+            auto fpsBypassEnabled = gm->getGameVariable(GameVar::UnlockFPS);
+            auto fpsBypassValue = gm->m_customFPSTarget;
+            if (fpsBypassValue == 0) fpsBypassValue = 60.f;
+            config::set("global.fpsbypass", fpsBypassValue);
+            config::set("global.fpsbypass.toggle", fpsBypassEnabled);
+
+            updateRefreshRate();
+        }
+
+        [[nodiscard]] const char* getId() const override { return "FPSBypass"; }
+        [[nodiscard]] int32_t getPriority() const override { return -15; }
+    };
+
+    REGISTER_HACK(FPSBypass)
+
+    class $modify(FPSBypassGMHook, GameManager) {
+        void setGameVariable(char const* key, bool value) {
+            GameManager::setGameVariable(key, value);
+            if (strcmp(key, GameVar::UnlockFPS) == 0 && value) {
+                if (this->getGameVariable(GameVar::VerticalSync)) {
+                    config::setTemp("global.vsync", false);
+                    GameManager::setGameVariable(GameVar::VerticalSync, false);
+                    geode::queueInMainThread([] {
+                        utils::get<AppDelegate>()->toggleVerticalSync(false);
+                    });
+                }
+            }
+        }
+    };
+}
+#endif
