@@ -22,5 +22,6 @@
     "geode.custom-keybinds": ">=v2.1.0",
     "cvolton.misc_bugfixes": ">=v1.10.1",
     "nampe.gdvn": ">=v5.0.1"
+    "cvolton.level-id-api" : ">= v2.0.0"
   }
 }
